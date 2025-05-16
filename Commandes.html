@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrôle Incendie - Interface Cloud</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --primary-red: #d32f2f;
+            --primary-blue: #2196F3;
+            --primary-green: #4CAF50;
+            --primary-orange: #ff9800;
+            --gray-disabled: #cccccc;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            color: var(--primary-red);
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .data-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            transition: transform 0.3s ease;
+            position: relative;
+        }
+
+        .data-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .temperature {
+            border-left: 5px solid var(--primary-red);
+        }
+
+        .door {
+            border-left: 5px solid var(--primary-blue);
+        }
+
+        .alarm {
+            border-left: 5px solid var(--primary-orange);
+        }
+
+        .status-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .temperature-value {
+            font-size: 3.5em;
+            font-weight: bold;
+            color: var(--primary-red);
+            margin: 15px 0;
+        }
+
+        .unit {
+            font-size: 0.6em;
+            color: #666;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        button {
+            padding: 20px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .trap-open { background: var(--primary-green); color: white; }
+        .trap-close { background: var(--primary-red); color: white; }
+        .buzzer-on { background: var(--primary-orange); color: white; }
+        .buzzer-off { background: var(--primary-blue); color: white; }
+        .test-toggle { background: #555; color: white; }
+
+        button:disabled {
+            background: var(--gray-disabled) !important;
+            color: #666 !important;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        #status {
+            padding: 18px;
+            border-radius: 12px;
+            text-align: center;
+            font-weight: bold;
+            margin-top: 25px;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+
+        .connected { background: #e8f5e9; color: #2e7d32; }
+        .disconnected { background: #ffebee; color: #c62828; }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔥 Système de Contrôle Incendie</h1>
+
+        <div class="dashboard">
+            <div class="data-card temperature">
+                <h2>🌡 Température Actuelle</h2>
+                <div class="temperature-value" id="temperature">--<span class="unit">°C</span></div>
+                <div class="update-time" id="temp-update-time"></div>
+            </div>
+
+            <div class="data-card door">
+                <h2>🚪 État de la Porte</h2>
+                <div class="status-value" id="door-status">--</div>
+                <div class="update-time" id="door-update-time"></div>
+            </div>
+
+            <div class="data-card alarm">
+                <h2>🚨 État de l'Alarme</h2>
+                <div class="status-value" id="alarm-status">--</div>
+                <div class="update-time" id="alarm-update-time"></div>
+            </div>
+        </div>
+
+        <button class="test-toggle" onclick="toggleTestMode()" id="test-btn">
+            ❌ Mode Test : Désactivé
+        </button>
+
+        <div class="btn-grid">
+            <button class="trap-open control-btn" onclick="sendCommand('trap_open')" disabled>
+                🔓 Ouvrir Trappe
+            </button>
+
+            <button class="trap-close control-btn" onclick="sendCommand('trap_close')" disabled>
+                🔒 Fermer Trappe
+            </button>
+
+            <button class="buzzer-on control-btn" onclick="sendCommand('buzzer_on')" disabled>
+                🔊 Activer Alarme
+            </button>
+
+            <button class="buzzer-off control-btn" onclick="sendCommand('buzzer_off')" disabled>
+                🔇 Désactiver Alarme
+            </button>
+        </div>
+
+        <div id="status">Connexion en cours...</div>
+    </div>
+
+    <script>
+        let db;
+        let isTestMode = false;
+        let testModeRef;
+        const controlButtons = document.querySelectorAll('.control-btn');
+        const testBtn = document.getElementById('test-btn');
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAWrmYqcV9eTLNwOVNPVxA41oibv6dfWkg",
+            authDomain: "surveillanceincendie-86824.firebaseapp.com",
+            databaseURL: "https://surveillanceincendie-86824-default-rtdb.firebaseio.com",
+            projectId: "surveillanceincendie-86824",
+            storageBucket: "surveillanceincendie-86824.appspot.com",
+            messagingSenderId: "388600764285",
+            appId: "1:388600764285:web:98f07cd642f55593f75e14"
+        };
+
+        // Initialisation Firebase
+        function initializeFirebase() {
+            try {
+                const app = firebase.initializeApp(firebaseConfig);
+                db = firebase.database();
+                setupListeners();
+            } catch (error) {
+                showError("Erreur d'initialisation Firebase!");
+                console.error("Firebase Error:", error);
+            }
+        }
+
+        function setupListeners() {
+            const statusElement = document.getElementById('status');
+            
+            // État de connexion
+            db.ref(".info/connected").on("value", (snapshot) => {
+                if (snapshot.val()) {
+                    statusElement.textContent = "Connecté ✅";
+                    statusElement.className = "connected";
+                } else {
+                    statusElement.textContent = "Déconnecté ❌";
+                    statusElement.className = "disconnected";
+                }
+            });
+
+            // Surveillance température
+            db.ref('donnees').limitToLast(1).on('child_added', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    document.getElementById('temperature').textContent = 
+                        `${data.temperature?.toFixed(1) || '--'}°C`;
+                    document.getElementById('temp-update-time').textContent = 
+                        `Dernière mise à jour: ${new Date(data.timestamp).toLocaleTimeString()}`;
+                }
+            });
+
+            // Surveillance porte
+            db.ref('status/door').on('value', (snapshot) => {
+                const doorState = snapshot.val();
+                const doorElement = document.getElementById('door-status');
+                const timeElement = document.getElementById('door-update-time');
+                
+                if (doorState === 'open') {
+                    doorElement.textContent = 'Ouverte';
+                    doorElement.style.color = 'var(--primary-green)';
+                } else if (doorState === 'closed') {
+                    doorElement.textContent = 'Fermée';
+                    doorElement.style.color = 'var(--primary-red)';
+                } else {
+                    doorElement.textContent = '--';
+                }
+                timeElement.textContent = `Dernière mise à jour: ${new Date().toLocaleTimeString()}`;
+            });
+
+            // Surveillance alarme
+            db.ref('status/alarm').on('value', (snapshot) => {
+                const alarmState = snapshot.val();
+                const alarmElement = document.getElementById('alarm-status');
+                const timeElement = document.getElementById('alarm-update-time');
+                
+                if (alarmState === 'active') {
+                    alarmElement.textContent = 'Active';
+                    alarmElement.style.color = 'var(--primary-red)';
+                } else if (alarmState === 'inactive') {
+                    alarmElement.textContent = 'Inactive';
+                    alarmElement.style.color = 'var(--primary-green)';
+                } else {
+                    alarmElement.textContent = '--';
+                }
+                timeElement.textContent = `Dernière mise à jour: ${new Date().toLocaleTimeString()}`;
+            });
+
+            // Mode test
+            testModeRef = db.ref('testMode/enabled');
+            testModeRef.on('value', (snapshot) => {
+                isTestMode = snapshot.val() || false;
+                updateUI();
+            });
+        }
+
+        function updateUI() {
+            controlButtons.forEach(btn => btn.disabled = !isTestMode);
+            testBtn.textContent = isTestMode 
+                ? '✅ Mode Test : Activé' 
+                : '❌ Mode Test : Désactivé';
+            
+            testBtn.classList.toggle('loading', false);
+        }
+
+        async function toggleTestMode() {
+            try {
+                testBtn.classList.add('loading');
+                await testModeRef.set(!isTestMode);
+            } catch (error) {
+                showError(`Échec de la mise à jour: ${error.message}`);
+            } finally {
+                testBtn.classList.remove('loading');
+            }
+        }
+
+        async function sendCommand(action) {
+            if (!isTestMode) {
+                showError("Activez le mode test d'abord!");
+                return;
+            }
+
+            const statusElement = document.getElementById('status');
+            try {
+                statusElement.innerHTML = `
+                    <span style="color: #2196F3;">
+                        ⏳ Envoi en cours...
+                    </span>
+                `;
+
+                const newCommandRef = db.ref("commands").push();
+                await newCommandRef.set({
+                    action: action,
+                    executed: false,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+
+                statusElement.innerHTML = `
+                    <span style="color: #4CAF50;">
+                        ✔️ ${action.replace('_', ' ')}<br>
+                        ${new Date().toLocaleTimeString()}
+                    </span>
+                `;
+
+            } catch (error) {
+                showError(`Échec d'envoi: ${error.message}`);
+                console.error("Send Error:", error);
+            }
+        }
+
+        function showError(message) {
+            const statusElement = document.getElementById('status');
+            statusElement.innerHTML = `
+                <span style="color: #d32f2f;">
+                    ❌ ${message}
+                </span>
+            `;
+        }
+
+        // Initialisation
+        window.addEventListener('load', () => {
+            initializeFirebase();
+            testModeRef?.once('value').then(snapshot => {
+                isTestMode = snapshot.val() || false;
+                updateUI();
+            });
+        });
+    </script>
+</body>
+</html>
